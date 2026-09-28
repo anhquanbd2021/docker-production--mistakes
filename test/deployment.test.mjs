@@ -1,0 +1,59 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { startProduction } from '../app/server.js';
+
+async function get(port, path) {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`);
+  return { status: res.status, type: res.headers.get('content-type'), body: await res.text() };
+}
+
+test('server serves only allowed lab assets, health and version', async () => {
+  const previous = process.env.GIT_COMMIT;
+  process.env.GIT_COMMIT = 'test-commit';
+  const { server, close } = await startProduction({ port: 0 });
+  const port = server.address().port;
+  try {
+    const index = await get(port, '/');
+    assert.equal(index.status, 200);
+    assert.match(index.body, /Dockerfile Doctor/);
+    assert.match(index.type, /text\/html/);
+
+    const health = await get(port, '/health');
+    assert.equal(health.status, 200);
+
+    const version = await get(port, '/version');
+    assert.equal(version.status, 200);
+    assert.deepEqual(JSON.parse(version.body), {
+      name: 'docker-production-mistakes-demo',
+      version: '1.0.0',
+      commit: 'test-commit',
+    });
+
+    for (const path of ['/rules.mjs', '/layers.mjs', '/context.mjs', '/examples.mjs']) {
+      const module = await get(port, path);
+      assert.equal(module.status, 200);
+      assert.match(module.type, /javascript/);
+    }
+
+    const home = await fetch(`http://127.0.0.1:${port}/`);
+    assert.match(home.headers.get('content-security-policy'), /default-src 'self'/);
+    assert.equal(home.headers.get('x-content-type-options'), 'nosniff');
+  } finally {
+    await close();
+    if (previous === undefined) delete process.env.GIT_COMMIT;
+    else process.env.GIT_COMMIT = previous;
+  }
+});
+
+test('server blocks path traversal and missing files', async () => {
+  const { server, close } = await startProduction({ port: 0 });
+  const port = server.address().port;
+  try {
+    assert.equal((await get(port, '/../package.json')).status, 404);
+    assert.equal((await get(port, '/index.html')).status, 404);
+    assert.equal((await get(port, '/nope.js')).status, 404);
+    assert.equal((await get(port, '/app/server.js')).status, 404);
+  } finally {
+    await close();
+  }
+});
