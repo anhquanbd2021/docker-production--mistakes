@@ -8,8 +8,10 @@ async function get(port, path) {
 }
 
 test('server serves only allowed lab assets, health and version', async () => {
-  const previous = process.env.GIT_COMMIT;
+  const previousGit = process.env.GIT_COMMIT;
+  const previousRender = process.env.RENDER_GIT_COMMIT;
   process.env.GIT_COMMIT = 'test-commit';
+  process.env.RENDER_GIT_COMMIT = 'test-commit';
   const { server, close } = await startProduction({ port: 0 });
   const port = server.address().port;
   try {
@@ -40,8 +42,10 @@ test('server serves only allowed lab assets, health and version', async () => {
     assert.equal(home.headers.get('x-content-type-options'), 'nosniff');
   } finally {
     await close();
-    if (previous === undefined) delete process.env.GIT_COMMIT;
-    else process.env.GIT_COMMIT = previous;
+    if (previousGit === undefined) delete process.env.GIT_COMMIT;
+    else process.env.GIT_COMMIT = previousGit;
+    if (previousRender === undefined) delete process.env.RENDER_GIT_COMMIT;
+    else process.env.RENDER_GIT_COMMIT = previousRender;
   }
 });
 
